@@ -713,6 +713,99 @@ class onlineCLR_Loss(nn.Module):
         loss = (loss_a + loss_b).mean()
 
         return loss
+    
+## Defining new losses
 
+#New Loss1 
+class NCExtHardNegativeMiningLoss(nn.Module):
+    def __init__(self, temperature=0.01, world_size=8, weighting_alpha=1.0):
+        super(NCExtHardNegativeMiningLoss, self).__init__()
+        self.temperature = temperature
+        self.world_size = world_size
+        self.weighting_alpha = weighting_alpha
+
+    def forward(self, image_features, text_features):
+        # Gather features across distributed processes
+        if self.world_size > 1:
+            image_features = torch.cat(GatherLayer.apply(image_features), dim=0)
+            text_features = torch.cat(GatherLayer.apply(text_features), dim=0)
+
+        batch_size = image_features.size(0)
+
+        
+        sim_matrix = torch.matmul(image_features, text_features.T) / self.temperature
+        positive_sim = torch.diag(sim_matrix)
+
+        
+        negative_mask = 1.0 - torch.eye(batch_size, device=sim_matrix.device)
+        negative_sim = sim_matrix * negative_mask
+        negative_weights = (negative_sim ** self.weighting_alpha) / torch.sum(negative_sim ** self.weighting_alpha, dim=1, keepdim=True)
+
+        # Compute NCE loss
+        log_probs = F.log_softmax(sim_matrix, dim=1)
+        positive_loss = -torch.mean(torch.log(torch.exp(positive_sim) / torch.sum(torch.exp(sim_matrix), dim=1)))
+        weighted_negative_loss = -torch.mean(torch.sum(negative_weights * log_probs, dim=1))
+        total_loss = positive_loss + weighted_negative_loss
+
+        return total_loss
+    
+
+#NewLoss2
+class AsymmetricContrastiveLoss(nn.Module):
+    def __init__(self, image_temperature=0.01, text_temperature=0.02, world_size=8):
+        super(AsymmetricContrastiveLoss, self).__init__()
+        self.image_temperature = image_temperature
+        self.text_temperature = text_temperature
+        self.world_size = world_size
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, image_features, text_features):
+        # Gather for distributed training
+        if self.world_size > 1:
+            image_features = torch.cat(GatherLayer.apply(image_features), dim=0)
+            text_features = torch.cat(GatherLayer.apply(text_features), dim=0)
+
+        batch_size = image_features.size(0)
+
+        
+        logits_image_to_text = torch.matmul(image_features, text_features.T) / self.image_temperature
+        logits_text_to_image = torch.matmul(text_features, image_features.T) / self.text_temperature
+        labels = torch.arange(batch_size, device=image_features.device)
+
+        
+        image_loss = self.criterion(logits_image_to_text, labels)
+        text_loss = self.criterion(logits_text_to_image, labels)
+        loss = (image_loss + text_loss) / 2
+
+        return loss
+    
+
+#NewLoss3
+class AlignmentUniformityLoss(nn.Module):
+    def __init__(self, temperature=0.01, world_size=8, alignment_weight=1.0, uniformity_weight=1.0):
+        super(AlignmentUniformityLoss, self).__init__()
+        self.temperature = temperature
+        self.world_size = world_size
+        self.alignment_weight = alignment_weight
+        self.uniformity_weight = uniformity_weight
+
+    def forward(self, image_features, text_features):
+        if self.world_size > 1:
+            image_features = torch.cat(GatherLayer.apply(image_features), dim=0)
+            text_features = torch.cat(GatherLayer.apply(text_features), dim=0)
+
+        
+        image_features = F.normalize(image_features, p=2, dim=-1)
+        text_features = F.normalize(text_features, p=2, dim=-1)
+
+        
+        alignment_loss = torch.mean((image_features - text_features).pow(2).sum(dim=1))
+        all_features = torch.cat([image_features, text_features], dim=0)
+        pairwise_distances = torch.cdist(all_features, all_features, p=2)
+        uniformity_loss = torch.mean(torch.exp(-pairwise_distances / self.temperature))
+
+        loss = self.alignment_weight * alignment_loss + self.uniformity_weight * uniformity_loss
+
+        return loss
 
 

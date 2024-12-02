@@ -58,6 +58,11 @@ def train(model, data_loader, optimizer, tokenizer, epoch, max_epoch, warmup_ste
     metric_logger.add_meter('lamda', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('weights_image_pos', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('weights_text_pos', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('hard_negative_alpha', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('image_temp', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('text_temp', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('alignment_weight', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('uniformity_weight', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
 
     header = 'Train Epoch: [{}]'.format(epoch)
     print_freq = 50
@@ -124,6 +129,17 @@ def train(model, data_loader, optimizer, tokenizer, epoch, max_epoch, warmup_ste
             metric_logger.update(b_T=0.0)
             metric_logger.update(v=0.0)
             metric_logger.update(lamda=info_dict['lamda'])
+
+        if args.ita_type == 'ncext_hardnegative':
+            metric_logger.update(hard_negative_alpha=info_dict['hard_negative_alpha'])
+
+        elif args.ita_type == 'asymmetric_contrastive':
+            metric_logger.update(image_temp=info_dict['image_temp'])
+            metric_logger.update(text_temp=info_dict['text_temp'])
+
+        elif args.ita_type == 'alignment_uniformity':
+            metric_logger.update(alignment_weight=info_dict['alignment_weight'])
+            metric_logger.update(uniformity_weight=info_dict['uniformity_weight'])
         else:
             metric_logger.update(avg_image_tau=info_dict['avg_image_tau'])
             metric_logger.update(avg_text_tau=info_dict['avg_text_tau'])
@@ -436,7 +452,9 @@ def main(args):
                   world_size=args.world_size, ita_type=args.ita_type, sogclr_gamma=args.sogclr_gamma, rho_I=args.rho_I, rho_T=args.rho_T, tau_init=args.tau_init,
                   eta_init=args.eta_init, beta_u=args.beta_u, temp=args.temp, learnable_temp=args.learnable_temp,
                   vicreg_sim_coeff=args.vicreg_sim_coeff, vicreg_std_coeff=args.vicreg_std_coeff, personalized_tau=args.personalized_tau, 
-                  use_temp_net=args.isogclr_temp_net, alpha=args.alpha, distributed=args.distributed)
+                  use_temp_net=args.isogclr_temp_net, alpha=args.alpha, 
+                  weighting_alpha=args.weighting_alpha, alignment_weight=args.alignment_weight, uniformity_weight=args.uniformity_weight, 
+                  image_temperature=args.image_temperature, text_temperature=args.text_temperature, distributed=args.distributed)
     model = model.to(device)
 
     if args.evaluate or args.ita_type == 'isogclr_denoise':
@@ -655,7 +673,7 @@ if __name__ == '__main__':
 
     # loss config
     parser.add_argument('--ita_type', required=True, choices=['clip', 'cyclip', 'vicreg', 'sogclr', 'sogclr_dro', 
-                        'isogclr_new_v2', 'isogclr_new_v1', 'isogclr_new', 'onlineclr'])
+                        'isogclr_new_v2', 'isogclr_new_v1', 'isogclr_new', 'onlineclr', 'ncext_hardnegative', 'asymmetric_contrastive', 'alignment_uniformity'])
     parser.add_argument('--vicreg_sim_coeff', default=25.0, type=float)
     parser.add_argument('--vicreg_std_coeff', default=25.0, type=float)
     parser.add_argument('--sogclr_gamma', default=0.8, type=float)
@@ -671,6 +689,13 @@ if __name__ == '__main__':
     parser.add_argument('--store_tau', action='store_true')
     parser.add_argument('--isogclr_temp_net', action='store_true')
     parser.add_argument('--alpha', default=1.0, type=float, help='for isogclr_denoise')
+
+    #New loss args
+    parser.add_argument('--weighting_alpha', default=0.1, type=float)
+    parser.add_argument('--alignment_weight', default=1.0, type=float)
+    parser.add_argument('--uniformity_weight', default=1.0, type=float)
+    parser.add_argument('--image_temperature', default=0.01, type=float)
+    parser.add_argument('--text_temperature', default=0.02, type=float)
 
     # set the fraction of data used for training
     parser.add_argument('--train_frac', default=1.0, type=float)
