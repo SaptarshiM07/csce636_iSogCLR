@@ -669,7 +669,12 @@ class onlineCLR_Loss(nn.Module):
             hidden1 = torch.cat(GatherLayer.apply(image_features), dim=0)
             hidden2 = torch.cat(GatherLayer.apply(text_features), dim=0)
 
+        else: 
+          hidden1 = image_features
+          hidden2 = text_features
+
         batch_size = hidden1.shape[0]
+
         
         labels = torch.eye(batch_size).cuda() # identity matrix
 
@@ -807,5 +812,35 @@ class AlignmentUniformityLoss(nn.Module):
         loss = self.alignment_weight * alignment_loss + self.uniformity_weight * uniformity_loss
 
         return loss
+
+
+#NewLoss4
+class HardNegativeMiningLoss(nn.Module):
+    def __init__(self, temperature=0.01, world_size=8, margin=0.2, top_k=5):
+        super(HardNegativeMiningLoss, self).__init__()
+        self.temperature = temperature
+        self.world_size = world_size
+        self.margin = margin
+        self.top_k = top_k
+
+    def forward(self, image_features, text_features):
+        # Gather for distributed training
+        if self.world_size > 1:
+            image_features = torch.cat(GatherLayer.apply(image_features), dim=0)
+            text_features = torch.cat(GatherLayer.apply(text_features), dim=0)
+
+        batch_size = image_features.size(0)
+        sim = torch.matmul(image_features, text_features.T) / self.temperature
+
+        positive = torch.diag(sim)  # Positive similarities
+        negative = sim.masked_fill(torch.eye(batch_size, device=sim.device).bool(), float('-inf'))
+
+        # Select top-k hardest negatives
+        hard_negatives, _ = negative.topk(self.top_k, dim=1)
+
+        # Compute loss
+        loss = torch.mean(F.relu(hard_negatives - positive.unsqueeze(1) + self.margin))
+        return loss
+
 
 

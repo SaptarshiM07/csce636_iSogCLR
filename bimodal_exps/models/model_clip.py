@@ -4,7 +4,7 @@ import timm
 from transformers import AutoModel, RobertaModel
 
 from models.losses import CLIP_Loss, CyCLIP_Loss, SogCLR_Loss, VICReg_Loss
-from models.losses import iSogCLR_New_v2_Loss, iSogCLR_New_v1_Loss, onlineCLR_Loss, iSogCLR_New_Loss, NCExtHardNegativeMiningLoss, AsymmetricContrastiveLoss, AlignmentUniformityLoss
+from models.losses import iSogCLR_New_v2_Loss, iSogCLR_New_v1_Loss, onlineCLR_Loss, iSogCLR_New_Loss, NCExtHardNegativeMiningLoss, AsymmetricContrastiveLoss, AlignmentUniformityLoss, HardNegativeMiningLoss
 
 import torch
 from torch import nn
@@ -40,6 +40,8 @@ class CLIP(nn.Module):
                  uniformity_weight=1.0,
                  image_temperature=0.01,
                  text_temperature=0.02,
+                 hard_neg_margin=0.2,
+                 hard_neg_top_k=5,
                  distributed=True,
                  ):
         super().__init__()
@@ -115,6 +117,9 @@ class CLIP(nn.Module):
         elif self.ita_type == 'alignment_uniformity':
             self.criterion = AlignmentUniformityLoss(temperature=self.temp, world_size=world_size, 
                                                      alignment_weight=alignment_weight, uniformity_weight=uniformity_weight)
+        elif self.ita_type == 'hardnegative_mining':
+            self.criterion = HardNegativeMiningLoss(temperature=self.temp, world_size=world_size, margin=hard_neg_margin, top_k=hard_neg_top_k)
+
         else:
             raise NotImplementedError
 
@@ -226,23 +231,28 @@ class CLIP(nn.Module):
         # New loss1 --> NCExt HardNegativeMiningLoss
         elif self.ita_type == 'ncext_hardnegative':
             loss_ita = self.criterion(image_feat, text_feat)
-            info_dict.update({'weighting_alpha': self.criterion.weighting_alpha})
+            # info_dict.update({'weighting_alpha': self.criterion.weighting_alpha})
             info_dict['avg_text_tau'] = 0.0
             info_dict['avg_image_tau'] = 0.0
 
         # New loss2 --> AsymmetricContrastiveLoss
         elif self.ita_type == 'asymmetric_contrastive':
             loss_ita = self.criterion(image_feat, text_feat)
-            info_dict.update({'image_temp': self.criterion.image_temperature, 'text_temp': self.criterion.text_temperature})
+            # info_dict.update({'image_temp': self.criterion.image_temperature, 'text_temp': self.criterion.text_temperature})
             info_dict['avg_text_tau'] = 0.0
             info_dict['avg_image_tau'] = 0.0
 
         # New loss3 --> AlignmentUniformityLoss
         elif self.ita_type == 'alignment_uniformity':
             loss_ita = self.criterion(image_feat, text_feat)
-            info_dict.update({'alignment_weight': self.criterion.alignment_weight, 'uniformity_weight': self.criterion.uniformity_weight})
+            # info_dict.update({'alignment_weight': self.criterion.alignment_weight, 'uniformity_weight': self.criterion.uniformity_weight})
             info_dict['avg_text_tau'] = 0.0
             info_dict['avg_image_tau'] = 0.0
+
+        elif self.ita_type == 'hardnegative_mining':
+            loss_ita = self.criterion(image_feat, text_feat)
+            info_dict['avg_image_tau'] = 0.0
+            info_dict['avg_text_tau'] = 0.0
             
         else:
             raise NotImplementedError
