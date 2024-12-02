@@ -58,7 +58,7 @@ def train(model, data_loader, optimizer, tokenizer, epoch, max_epoch, warmup_ste
     metric_logger.add_meter('lamda', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('weights_image_pos', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('weights_text_pos', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
-    metric_logger.add_meter('hard_negative_alpha', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('weighting_alpha', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('image_temp', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('text_temp', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('alignment_weight', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
@@ -131,7 +131,7 @@ def train(model, data_loader, optimizer, tokenizer, epoch, max_epoch, warmup_ste
             metric_logger.update(lamda=info_dict['lamda'])
 
         if args.ita_type == 'ncext_hardnegative':
-            metric_logger.update(hard_negative_alpha=info_dict['hard_negative_alpha'])
+            metric_logger.update(weighting_alpha=info_dict['weighting_alpha'])
 
         elif args.ita_type == 'asymmetric_contrastive':
             metric_logger.update(image_temp=info_dict['image_temp'])
